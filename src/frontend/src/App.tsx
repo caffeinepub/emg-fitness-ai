@@ -17,13 +17,22 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Activity, Bot, Moon, Sun, Trash2, Zap } from "lucide-react";
+import {
+  Activity,
+  Bot,
+  CheckCircle2,
+  Moon,
+  Sun,
+  Trash2,
+  Zap,
+} from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { selectMealsFromDataset } from "./nutritionData";
 
 type PaletteId = "blue" | "purple" | "orange" | "crimson";
 type EmgMode = "slider" | "raw";
+type SensingStatus = "idle" | "sensing" | "done";
 
 const PALETTES: {
   id: PaletteId;
@@ -517,6 +526,24 @@ export default function App() {
 
   const [emgMode, setEmgMode] = useState<EmgMode>("slider");
 
+  // Auto-analyze states
+  const [autoAnalyze, setAutoAnalyze] = useState(false);
+  const [sensingStatus, setSensingStatus] = useState<SensingStatus>("idle");
+  const autoAnalyzeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const statusResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Refs to latest muscles and profile for debounce callback
+  const musclesRef = useRef(muscles);
+  const profileRef = useRef(profile);
+
+  useEffect(() => {
+    musclesRef.current = muscles;
+  }, [muscles]);
+
+  useEffect(() => {
+    profileRef.current = profile;
+  }, [profile]);
+
   const [duration, setDuration] = useState("30");
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
     try {
@@ -558,10 +585,17 @@ export default function App() {
     setEditingProfile(false);
   };
 
-  const handleAnalyze = () => {
-    if (!profile) return;
+  // Core analyze function that accepts values directly (for debounce use)
+  const handleAnalyzeWithValues = (
+    muscleValues: Record<MuscleKey, number>,
+    userProfile: UserProfile,
+  ) => {
     const dur = Number.parseInt(duration) || 30;
-    const { assistantMsg, userMsg } = analyzeWorkout(muscles, dur, profile);
+    const { assistantMsg, userMsg } = analyzeWorkout(
+      muscleValues,
+      dur,
+      userProfile,
+    );
 
     const now = Date.now();
     const userMessage: ChatMessage = {
@@ -579,6 +613,11 @@ export default function App() {
     setMessages((prev) => [...prev, userMessage, botMessage]);
   };
 
+  const handleAnalyze = () => {
+    if (!profile) return;
+    handleAnalyzeWithValues(muscles, profile);
+  };
+
   const clearHistory = () => {
     setMessages([]);
   };
@@ -594,6 +633,11 @@ export default function App() {
       setEmgMode("raw");
     } else {
       // raw → slider: percentages already updated in real-time, just switch mode
+      // Also reset auto-analyze
+      setAutoAnalyze(false);
+      setSensingStatus("idle");
+      if (autoAnalyzeTimer.current) clearTimeout(autoAnalyzeTimer.current);
+      if (statusResetTimer.current) clearTimeout(statusResetTimer.current);
       setEmgMode("slider");
     }
   };
@@ -604,6 +648,36 @@ export default function App() {
     setRawValues((prev) => ({ ...prev, [muscle]: raw }));
     const percent = Math.round((raw / 1023) * 100);
     setMuscles((prev) => ({ ...prev, [muscle]: percent }));
+
+    // Auto-analyze debounce
+    if (autoAnalyze) {
+      if (autoAnalyzeTimer.current) clearTimeout(autoAnalyzeTimer.current);
+      if (statusResetTimer.current) clearTimeout(statusResetTimer.current);
+      setSensingStatus("sensing");
+      autoAnalyzeTimer.current = setTimeout(() => {
+        const currentMuscles = musclesRef.current;
+        const currentProfile = profileRef.current;
+        if (currentProfile) {
+          handleAnalyzeWithValues(currentMuscles, currentProfile);
+        }
+        setSensingStatus("done");
+        statusResetTimer.current = setTimeout(() => {
+          setSensingStatus("idle");
+        }, 2000);
+      }, 1500);
+    }
+  };
+
+  const handleToggleAutoAnalyze = () => {
+    if (autoAnalyze) {
+      // Turning OFF
+      setAutoAnalyze(false);
+      setSensingStatus("idle");
+      if (autoAnalyzeTimer.current) clearTimeout(autoAnalyzeTimer.current);
+      if (statusResetTimer.current) clearTimeout(statusResetTimer.current);
+    } else {
+      setAutoAnalyze(true);
+    }
   };
 
   if (!profile || editingProfile) {
@@ -720,50 +794,107 @@ export default function App() {
                       MyoWare EMG Sensor Data
                     </CardTitle>
                   </div>
-                  {/* Input mode toggle pill */}
-                  <TooltipProvider delayDuration={300}>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <button
-                          type="button"
-                          data-ocid="emg.mode.toggle"
-                          onClick={handleToggleEmgMode}
-                          aria-label={`Switch to ${emgMode === "slider" ? "Raw ADC" : "Slider"} mode`}
-                          className="flex items-center rounded-full border border-border bg-muted/50 p-0.5 text-xs font-semibold transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                        >
-                          <span
-                            className={`px-2.5 py-1 rounded-full transition-all duration-200 ${
-                              emgMode === "slider"
-                                ? "bg-primary text-primary-foreground shadow-sm"
-                                : "text-muted-foreground"
-                            }`}
+                  <div className="flex items-center gap-2">
+                    {/* Auto-analyze toggle — only in raw ADC mode */}
+                    {emgMode === "raw" && (
+                      <TooltipProvider delayDuration={300}>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              data-ocid="emg.auto.toggle"
+                              onClick={handleToggleAutoAnalyze}
+                              aria-label={
+                                autoAnalyze
+                                  ? "Disable auto-analyze"
+                                  : "Enable auto-analyze"
+                              }
+                              aria-pressed={autoAnalyze}
+                              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-semibold transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                                autoAnalyze
+                                  ? "bg-green-500/20 text-green-400 border-green-500/40"
+                                  : "bg-muted/50 text-muted-foreground border-border hover:bg-muted"
+                              }`}
+                            >
+                              <span
+                                className={`w-1.5 h-1.5 rounded-full ${
+                                  autoAnalyze
+                                    ? "bg-green-400 animate-pulse"
+                                    : "bg-muted-foreground"
+                                }`}
+                              />
+                              Auto
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent side="bottom" className="text-xs">
+                            Auto-analyze when sensor values change
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    )}
+
+                    {/* Input mode toggle pill */}
+                    <TooltipProvider delayDuration={300}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            data-ocid="emg.mode.toggle"
+                            onClick={handleToggleEmgMode}
+                            aria-label={`Switch to ${emgMode === "slider" ? "Raw ADC" : "Slider"} mode`}
+                            className="flex items-center rounded-full border border-border bg-muted/50 p-0.5 text-xs font-semibold transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                           >
-                            Slider
-                          </span>
-                          <span
-                            className={`px-2.5 py-1 rounded-full transition-all duration-200 ${
-                              emgMode === "raw"
-                                ? "bg-primary text-primary-foreground shadow-sm"
-                                : "text-muted-foreground"
-                            }`}
-                          >
-                            Raw ADC
-                          </span>
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent side="bottom" className="text-xs">
-                        {emgMode === "slider"
-                          ? "Switch to raw ADC input (0–1023) like real MyoWare output"
-                          : "Switch back to percentage sliders"}
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
+                            <span
+                              className={`px-2.5 py-1 rounded-full transition-all duration-200 ${
+                                emgMode === "slider"
+                                  ? "bg-primary text-primary-foreground shadow-sm"
+                                  : "text-muted-foreground"
+                              }`}
+                            >
+                              Slider
+                            </span>
+                            <span
+                              className={`px-2.5 py-1 rounded-full transition-all duration-200 ${
+                                emgMode === "raw"
+                                  ? "bg-primary text-primary-foreground shadow-sm"
+                                  : "text-muted-foreground"
+                              }`}
+                            >
+                              Raw ADC
+                            </span>
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom" className="text-xs">
+                          {emgMode === "slider"
+                            ? "Switch to raw ADC input (0–1023) like real MyoWare output"
+                            : "Switch back to percentage sliders"}
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
                 </div>
+
                 {emgMode === "raw" && (
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    📡 Raw ADC (0–1023) — simulating live MyoWare sensor output
-                  </p>
+                  <>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      📡 Raw ADC (0–1023) — simulating live MyoWare sensor
+                      output
+                    </p>
+                    {/* Hardware tip callout */}
+                    <div className="mt-2 flex items-start gap-1.5 rounded-md border border-border bg-muted/30 px-2.5 py-1.5">
+                      <span className="text-xs leading-relaxed text-muted-foreground">
+                        💡{" "}
+                        <span className="font-medium text-foreground/70">
+                          Hardware tip:
+                        </span>{" "}
+                        Connect MyoWare → Arduino analog pin → Serial → parse
+                        values 0–1023 per muscle. Enable Auto above to stream
+                        live.
+                      </span>
+                    </div>
+                  </>
                 )}
+
                 <EMGWaveSVG palette={palette} />
               </CardHeader>
               <CardContent className="space-y-4">
@@ -853,13 +984,54 @@ export default function App() {
                   />
                 </div>
 
+                {/* Status badge — only in raw ADC mode */}
+                {emgMode === "raw" && sensingStatus !== "idle" && (
+                  <AnimatePresence mode="wait">
+                    <motion.div
+                      key={sensingStatus}
+                      initial={{ opacity: 0, y: -4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -4 }}
+                      transition={{ duration: 0.2 }}
+                      data-ocid={
+                        sensingStatus === "sensing"
+                          ? "emg.loading_state"
+                          : "emg.success_state"
+                      }
+                      className={`flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-full border w-fit ${
+                        sensingStatus === "sensing"
+                          ? "bg-amber-500/10 text-amber-400 border-amber-500/30"
+                          : "bg-green-500/10 text-green-400 border-green-500/30"
+                      }`}
+                    >
+                      {sensingStatus === "sensing" ? (
+                        <>
+                          <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                          Reading sensor...
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          Analysis complete
+                        </>
+                      )}
+                    </motion.div>
+                  </AnimatePresence>
+                )}
+
                 <Button
                   data-ocid="emg.analyze.primary_button"
-                  className="w-full bg-primary text-primary-foreground hover:opacity-90 font-display font-semibold text-base glow-blue mt-2"
+                  className={`w-full font-display font-semibold text-base glow-blue mt-2 transition-opacity ${
+                    autoAnalyze && emgMode === "raw"
+                      ? "bg-primary/60 text-primary-foreground hover:opacity-80"
+                      : "bg-primary text-primary-foreground hover:opacity-90"
+                  }`}
                   onClick={handleAnalyze}
                 >
                   <Zap className="mr-2 h-4 w-4" />
-                  Analyze My Workout
+                  {autoAnalyze && emgMode === "raw"
+                    ? "Manual Analyze"
+                    : "Analyze My Workout"}
                 </Button>
               </CardContent>
             </Card>
