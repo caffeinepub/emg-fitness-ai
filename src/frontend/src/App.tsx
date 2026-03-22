@@ -20,8 +20,10 @@ import {
 import { Activity, Bot, Moon, Sun, Trash2, Zap } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
+import { selectMealsFromDataset } from "./nutritionData";
 
 type PaletteId = "blue" | "purple" | "orange" | "crimson";
+type EmgMode = "slider" | "raw";
 
 const PALETTES: {
   id: PaletteId;
@@ -69,30 +71,6 @@ interface ChatMessage {
   content: string;
   timestamp: number;
 }
-
-const MEAL_PLANS = {
-  "Build Muscle": [
-    "Grilled chicken with brown rice and broccoli",
-    "Egg white omelette with oats",
-    "Salmon with sweet potato",
-    "Greek yogurt with mixed nuts and banana",
-    "Lean beef stir-fry with quinoa",
-  ],
-  "Lose Weight": [
-    "Grilled tilapia with steamed veggies",
-    "Mixed greens salad with grilled chicken",
-    "Zucchini noodles with turkey meatballs",
-    "Boiled eggs with avocado toast (1 slice)",
-    "Lentil soup with a side salad",
-  ],
-  "Maintain Fitness": [
-    "Whole wheat pasta with grilled chicken",
-    "Veggie wrap with hummus",
-    "Brown rice bowl with tofu and veggies",
-    "Smoothie with protein powder, banana, and almond milk",
-    "Overnight oats with berries",
-  ],
-};
 
 const BEGINNER_TIPS: Record<string, string> = {
   Low: "Great start! Focus on perfecting your form at low intensity before increasing resistance. Rest 60–90 seconds between sets.",
@@ -176,12 +154,21 @@ function PalettePicker({
 function ProfileSetup({
   onComplete,
   palette,
-}: { onComplete: (p: UserProfile) => void; palette: PaletteId }) {
-  const [name, setName] = useState("");
-  const [age, setAge] = useState("");
-  const [weight, setWeight] = useState("");
-  const [gender, setGender] = useState<string>("");
-  const [goal, setGoal] = useState<string>("");
+  initialData,
+}: {
+  onComplete: (p: UserProfile) => void;
+  palette: PaletteId;
+  initialData?: UserProfile;
+}) {
+  const [name, setName] = useState(initialData?.name ?? "");
+  const [age, setAge] = useState(
+    initialData?.age ? String(initialData.age) : "",
+  );
+  const [weight, setWeight] = useState(
+    initialData?.weight ? String(initialData.weight) : "",
+  );
+  const [gender, setGender] = useState<string>(initialData?.gender ?? "");
+  const [goal, setGoal] = useState<string>(initialData?.goal ?? "");
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const validate = () => {
@@ -240,7 +227,7 @@ function ProfileSetup({
         <Card className="border-border bg-card glow-blue">
           <CardHeader>
             <CardTitle className="font-display text-xl text-primary">
-              Set Up Your Profile
+              {initialData ? "Edit Your Profile" : "Set Up Your Profile"}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-5">
@@ -436,10 +423,39 @@ function analyzeWorkout(
     carbG = Math.round((dailyCals - proteinG * 4 - fatG * 9) / 4);
   }
 
-  const meals = MEAL_PLANS[profile.goal];
-  const tip = BEGINNER_TIPS[intensity];
+  const mealPlan = selectMealsFromDataset(
+    primary as unknown as string[],
+    intensity,
+    profile.goal,
+    dailyCals,
+    proteinG,
+  );
 
+  const tip = BEGINNER_TIPS[intensity];
   const primaryStr = primary.length > 0 ? primary.join(", ") : "None detected";
+
+  // Build meal plan text
+  const mealLines = mealPlan.meals
+    .map((meal) => {
+      const foodLines = meal.foods
+        .map(
+          (f) =>
+            `  • ${f.food.name} (${f.food.servingSize}) – ${f.adjustedCalories} kcal | P:${f.adjustedProtein}g C:${f.adjustedCarbs}g F:${f.adjustedFat}g`,
+        )
+        .join("\n");
+      return `${meal.mealName}\n${foodLines}\n  ─ Total: ${meal.totalCalories} kcal | P:${Math.round(meal.totalProtein)}g C:${Math.round(meal.totalCarbs)}g F:${Math.round(meal.totalFat)}g`;
+    })
+    .join("\n\n");
+
+  const recoveryLines =
+    mealPlan.recoveryFoods.length > 0
+      ? mealPlan.recoveryFoods
+          .map(
+            (f) =>
+              `  • ${f.name} (${f.servingSize}) – great for muscle repair & recovery`,
+          )
+          .join("\n")
+      : "  • Whey Protein Shake – fast-absorbing protein for recovery\n  • Salmon – rich in omega-3s for muscle repair\n  • Blueberries – antioxidants to reduce inflammation";
 
   const assistantMsg = `Great workout, ${profile.name}! Here's what your EMG data tells us:
 
@@ -448,18 +464,14 @@ function analyzeWorkout(
 🔥 Calories burned: ~${calories} kcal
 
 📊 Your daily calorie target: ${dailyCals} kcal
+🥩 Protein: ${proteinG}g | 🍚 Carbs: ${carbG}g | 🥑 Fat: ${fatG}g
 
-🥗 Your personalized diet plan:
-• Protein: ${proteinG}g per day
-• Carbohydrates: ${carbG}g per day
-• Fats: ${fatG}g per day
+🍽️ Your personalized meal plan:
 
-🍽️ Meal ideas for you:
-• ${meals[0]}
-• ${meals[1]}
-• ${meals[2]}
-• ${meals[3]}
-• ${meals[4]}
+${mealLines}
+
+💪 Recovery foods for ${primaryStr}:
+${recoveryLines}
 
 💡 ${tip}`;
 
@@ -478,6 +490,8 @@ export default function App() {
     }
   });
 
+  const [editingProfile, setEditingProfile] = useState(false);
+
   const [theme, setTheme] = useState<"dark" | "light">(() => {
     return (localStorage.getItem("emg-theme") as "dark" | "light") || "dark";
   });
@@ -492,6 +506,17 @@ export default function App() {
       number
     >,
   );
+
+  // Raw ADC values (0-1023) mirroring the percentage state
+  const [rawValues, setRawValues] = useState<Record<MuscleKey, number>>(
+    Object.fromEntries(MUSCLE_KEYS.map((k) => [k, 0])) as Record<
+      MuscleKey,
+      number
+    >,
+  );
+
+  const [emgMode, setEmgMode] = useState<EmgMode>("slider");
+
   const [duration, setDuration] = useState("30");
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
     try {
@@ -530,6 +555,7 @@ export default function App() {
 
   const handleProfileComplete = (p: UserProfile) => {
     setProfile(p);
+    setEditingProfile(false);
   };
 
   const handleAnalyze = () => {
@@ -557,9 +583,36 @@ export default function App() {
     setMessages([]);
   };
 
-  if (!profile) {
+  // Toggle between slider and raw ADC mode
+  const handleToggleEmgMode = () => {
+    if (emgMode === "slider") {
+      // slider → raw: convert current percentages to raw ADC values
+      const newRaw = Object.fromEntries(
+        MUSCLE_KEYS.map((k) => [k, Math.round((muscles[k] / 100) * 1023)]),
+      ) as Record<MuscleKey, number>;
+      setRawValues(newRaw);
+      setEmgMode("raw");
+    } else {
+      // raw → slider: percentages already updated in real-time, just switch mode
+      setEmgMode("slider");
+    }
+  };
+
+  // Handle raw ADC input change
+  const handleRawChange = (muscle: MuscleKey, rawStr: string) => {
+    const raw = Math.max(0, Math.min(1023, Number.parseInt(rawStr) || 0));
+    setRawValues((prev) => ({ ...prev, [muscle]: raw }));
+    const percent = Math.round((raw / 1023) * 100);
+    setMuscles((prev) => ({ ...prev, [muscle]: percent }));
+  };
+
+  if (!profile || editingProfile) {
     return (
-      <ProfileSetup onComplete={handleProfileComplete} palette={palette} />
+      <ProfileSetup
+        onComplete={handleProfileComplete}
+        palette={palette}
+        initialData={profile ?? undefined}
+      />
     );
   }
 
@@ -637,13 +690,11 @@ export default function App() {
               </AnimatePresence>
             </Button>
             <Button
+              data-ocid="header.edit_profile.button"
               variant="outline"
               size="sm"
               className="border-border text-muted-foreground hover:text-foreground"
-              onClick={() => {
-                localStorage.removeItem("emg-profile");
-                setProfile(null);
-              }}
+              onClick={() => setEditingProfile(true)}
             >
               Edit Profile
             </Button>
@@ -662,17 +713,63 @@ export default function App() {
           >
             <Card className="border-border bg-card h-full">
               <CardHeader className="pb-2">
-                <div className="flex items-center gap-2 mb-1">
-                  <Activity className="h-5 w-5 text-primary" />
-                  <CardTitle className="font-display text-lg text-primary">
-                    MyoWare EMG Sensor Data
-                  </CardTitle>
+                <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center gap-2">
+                    <Activity className="h-5 w-5 text-primary" />
+                    <CardTitle className="font-display text-lg text-primary">
+                      MyoWare EMG Sensor Data
+                    </CardTitle>
+                  </div>
+                  {/* Input mode toggle pill */}
+                  <TooltipProvider delayDuration={300}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          data-ocid="emg.mode.toggle"
+                          onClick={handleToggleEmgMode}
+                          aria-label={`Switch to ${emgMode === "slider" ? "Raw ADC" : "Slider"} mode`}
+                          className="flex items-center rounded-full border border-border bg-muted/50 p-0.5 text-xs font-semibold transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        >
+                          <span
+                            className={`px-2.5 py-1 rounded-full transition-all duration-200 ${
+                              emgMode === "slider"
+                                ? "bg-primary text-primary-foreground shadow-sm"
+                                : "text-muted-foreground"
+                            }`}
+                          >
+                            Slider
+                          </span>
+                          <span
+                            className={`px-2.5 py-1 rounded-full transition-all duration-200 ${
+                              emgMode === "raw"
+                                ? "bg-primary text-primary-foreground shadow-sm"
+                                : "text-muted-foreground"
+                            }`}
+                          >
+                            Raw ADC
+                          </span>
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" className="text-xs">
+                        {emgMode === "slider"
+                          ? "Switch to raw ADC input (0–1023) like real MyoWare output"
+                          : "Switch back to percentage sliders"}
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
                 </div>
+                {emgMode === "raw" && (
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    📡 Raw ADC (0–1023) — simulating live MyoWare sensor output
+                  </p>
+                )}
                 <EMGWaveSVG palette={palette} />
               </CardHeader>
               <CardContent className="space-y-4">
                 {MUSCLE_KEYS.map((muscle) => {
                   const val = muscles[muscle];
+                  const rawVal = rawValues[muscle];
                   return (
                     <div key={muscle} className="space-y-1">
                       <div className="flex justify-between items-center">
@@ -692,24 +789,48 @@ export default function App() {
                         </span>
                       </div>
                       <div className="flex items-center gap-2">
-                        <div className="flex-1">
-                          <Slider
-                            data-ocid={MUSCLE_OCIDS[muscle]}
-                            min={0}
-                            max={100}
-                            step={1}
-                            value={[val]}
-                            onValueChange={([v]) =>
-                              setMuscles((prev) => ({ ...prev, [muscle]: v }))
-                            }
-                            className="w-full"
-                          />
-                        </div>
+                        {emgMode === "slider" ? (
+                          <div className="flex-1">
+                            <Slider
+                              data-ocid={MUSCLE_OCIDS[muscle]}
+                              min={0}
+                              max={100}
+                              step={1}
+                              value={[val]}
+                              onValueChange={([v]) =>
+                                setMuscles((prev) => ({
+                                  ...prev,
+                                  [muscle]: v,
+                                }))
+                              }
+                              className="w-full"
+                            />
+                          </div>
+                        ) : (
+                          <div className="flex-1 flex items-center gap-2">
+                            <Input
+                              data-ocid={MUSCLE_OCIDS[muscle]}
+                              type="number"
+                              min={0}
+                              max={1023}
+                              value={rawVal}
+                              onChange={(e) =>
+                                handleRawChange(muscle, e.target.value)
+                              }
+                              className="bg-input border-border w-24 h-8 text-sm font-mono tabular-nums"
+                              aria-label={`${muscle} raw ADC value (0–1023)`}
+                            />
+                            <span className="text-xs text-muted-foreground font-mono">
+                              / 1023
+                            </span>
+                          </div>
+                        )}
                       </div>
                       <div className="h-1.5 rounded-full bg-muted overflow-hidden">
-                        <div
-                          className={`h-full transition-all duration-300 ${getBarColor(val)}`}
-                          style={{ width: `${val}%` }}
+                        <motion.div
+                          className={`h-full ${getBarColor(val)}`}
+                          animate={{ width: `${val}%` }}
+                          transition={{ duration: 0.25, ease: "easeOut" }}
                         />
                       </div>
                     </div>
