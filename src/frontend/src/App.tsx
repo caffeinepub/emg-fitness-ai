@@ -1,5 +1,11 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -21,48 +27,43 @@ import {
   Activity,
   Bot,
   CheckCircle2,
-  Moon,
-  Sun,
+  Paintbrush,
   Trash2,
   Zap,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
+import type { EMGRecord } from "./backend";
+import { createActorWithConfig } from "./config";
+import { selectExercisesFromDataset } from "./exerciseData";
 import { selectMealsFromDataset } from "./nutritionData";
 
-type PaletteId = "blue" | "purple" | "orange" | "crimson";
+type ThemeId = "light" | "dark" | "blue" | "green";
 type EmgMode = "slider" | "raw";
 type SensingStatus = "idle" | "sensing" | "done";
 
-const PALETTES: {
-  id: PaletteId;
+const THEMES: {
+  id: ThemeId;
   label: string;
-  swatch: string;
-  accentSwatch: string;
+  icon: string;
+  htmlClass: string;
+  dataPalette: string | null;
 }[] = [
   {
-    id: "blue",
-    label: "Electric Blue",
-    swatch: "oklch(0.72 0.22 220)",
-    accentSwatch: "oklch(0.82 0.22 145)",
+    id: "light",
+    label: "Light",
+    icon: "☀️",
+    htmlClass: "light",
+    dataPalette: null,
   },
+  { id: "dark", label: "Dark", icon: "🌙", htmlClass: "", dataPalette: null },
+  { id: "blue", label: "Blue", icon: "💙", htmlClass: "", dataPalette: null },
   {
-    id: "purple",
-    label: "Neon Purple",
-    swatch: "oklch(0.72 0.25 290)",
-    accentSwatch: "oklch(0.78 0.22 340)",
-  },
-  {
-    id: "orange",
-    label: "Solar Orange",
-    swatch: "oklch(0.78 0.2 50)",
-    accentSwatch: "oklch(0.76 0.18 180)",
-  },
-  {
-    id: "crimson",
-    label: "Crimson",
-    swatch: "oklch(0.68 0.24 15)",
-    accentSwatch: "oklch(0.72 0.22 260)",
+    id: "green",
+    label: "Green",
+    icon: "🟢",
+    htmlClass: "",
+    dataPalette: "green",
   },
 ];
 
@@ -88,9 +89,9 @@ const BEGINNER_TIPS: Record<string, string> = {
   High: "Impressive intensity! As a beginner, listen to your body and allow 48 hours of recovery for each muscle group before training it again.",
 };
 
-function EMGWaveSVG({ palette }: { palette: PaletteId }) {
-  const strokeColor =
-    PALETTES.find((p) => p.id === palette)?.swatch ?? "oklch(0.72 0.22 220)";
+function EMGWaveSVG({
+  strokeColor = "oklch(0.72 0.22 220)",
+}: { strokeColor?: string }) {
   return (
     <div className="overflow-hidden h-8 relative w-full">
       <svg
@@ -113,60 +114,60 @@ function EMGWaveSVG({ palette }: { palette: PaletteId }) {
   );
 }
 
-function PalettePicker({
-  palette,
+function ThemeSelector({
+  selectedTheme,
   onChange,
 }: {
-  palette: PaletteId;
-  onChange: (p: PaletteId) => void;
+  selectedTheme: ThemeId;
+  onChange: (t: ThemeId) => void;
 }) {
+  const current = THEMES.find((t) => t.id === selectedTheme) ?? THEMES[2];
   return (
-    <TooltipProvider delayDuration={300}>
-      <div
-        className="flex items-center gap-1.5"
-        aria-label="Color palette picker"
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          data-ocid="header.theme.open_modal_button"
+          variant="outline"
+          size="sm"
+          className="border-border text-muted-foreground hover:text-foreground gap-1.5 px-2.5"
+          aria-label="Select theme"
+        >
+          <Paintbrush className="h-3.5 w-3.5" />
+          <span className="text-xs font-medium hidden sm:inline">
+            {current.label}
+          </span>
+          <span className="text-xs sm:hidden">{current.icon}</span>
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        data-ocid="header.theme.dropdown_menu"
+        align="end"
+        className="w-36"
       >
-        {PALETTES.map((p) => {
-          const isSelected = palette === p.id;
-          return (
-            <Tooltip key={p.id}>
-              <TooltipTrigger asChild>
-                <button
-                  type="button"
-                  data-ocid={`header.palette-${p.id}.toggle`}
-                  aria-label={`Switch to ${p.label} palette`}
-                  aria-pressed={isSelected}
-                  onClick={() => onChange(p.id)}
-                  className="relative w-6 h-6 rounded-full transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-                  style={{
-                    background: `linear-gradient(135deg, ${p.swatch} 50%, ${p.accentSwatch} 50%)`,
-                    boxShadow: isSelected
-                      ? `0 0 0 2px var(--background-color, transparent), 0 0 0 4px ${p.swatch}`
-                      : "none",
-                    outline: isSelected ? `2px solid ${p.swatch}` : "none",
-                    outlineOffset: "2px",
-                    transform: isSelected ? "scale(1.2)" : "scale(1)",
-                  }}
-                />
-              </TooltipTrigger>
-              <TooltipContent side="bottom" className="text-xs">
-                {p.label}
-              </TooltipContent>
-            </Tooltip>
-          );
-        })}
-      </div>
-    </TooltipProvider>
+        {THEMES.map((theme) => (
+          <DropdownMenuItem
+            key={theme.id}
+            data-ocid={`header.theme-${theme.id}.toggle`}
+            onClick={() => onChange(theme.id)}
+            className={`gap-2 cursor-pointer ${selectedTheme === theme.id ? "text-primary font-semibold" : ""}`}
+          >
+            <span>{theme.icon}</span>
+            <span>{theme.label}</span>
+            {selectedTheme === theme.id && (
+              <CheckCircle2 className="h-3.5 w-3.5 ml-auto" />
+            )}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
 function ProfileSetup({
   onComplete,
-  palette,
   initialData,
 }: {
   onComplete: (p: UserProfile) => void;
-  palette: PaletteId;
   initialData?: UserProfile;
 }) {
   const [name, setName] = useState(initialData?.name ?? "");
@@ -208,8 +209,7 @@ function ProfileSetup({
     });
   };
 
-  const swatchColor =
-    PALETTES.find((p) => p.id === palette)?.swatch ?? "oklch(0.72 0.22 220)";
+  const swatchColor = "oklch(var(--primary))";
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4">
@@ -381,10 +381,22 @@ function getBarColor(val: number): string {
   return "bg-red-500";
 }
 
+function buildDatasetInsightSection(
+  record: EMGRecord,
+  emgAdcValue: number,
+): string {
+  return `📡 Dataset Insight (EMG: ${emgAdcValue} ADC):
+Activity Level: ${record.activity} | Recommended Intake: ${Number(record.calories)} kcal
+Protein: ${Number(record.protein)}g | Carbs: ${Number(record.carbs)}g | Water: ${record.water.toFixed(1)}L
+💡 ${record.recommendation}`;
+}
+
 function analyzeWorkout(
   muscles: Record<MuscleKey, number>,
   duration: number,
   profile: UserProfile,
+  datasetRecord?: EMGRecord,
+  emgAdcValue?: number,
 ) {
   const values = MUSCLE_KEYS.map((k) => muscles[k]);
   const avg = values.reduce((a, b) => a + b, 0) / values.length;
@@ -443,6 +455,24 @@ function analyzeWorkout(
   const tip = BEGINNER_TIPS[intensity];
   const primaryStr = primary.length > 0 ? primary.join(", ") : "None detected";
 
+  // Select exercises from dataset
+  const recommendedExercises = selectExercisesFromDataset(
+    primary as unknown as string[],
+    intensity,
+    profile.goal,
+    5,
+  );
+  const exerciseLines =
+    recommendedExercises.length > 0
+      ? recommendedExercises
+          .map(
+            (ex) =>
+              `  • ${ex.name} (${ex.difficulty}) – ${ex.sets} sets × ${ex.reps} | ${ex.equipment}
+    ${ex.description}`,
+          )
+          .join("\n")
+      : "  • Compound movements matching your activated muscle groups";
+
   // Build meal plan text
   const mealLines = mealPlan.meals
     .map((meal) => {
@@ -466,12 +496,18 @@ function analyzeWorkout(
           .join("\n")
       : "  • Whey Protein Shake – fast-absorbing protein for recovery\n  • Salmon – rich in omega-3s for muscle repair\n  • Blueberries – antioxidants to reduce inflammation";
 
+  // Build dataset insight section if available
+  const datasetSection =
+    datasetRecord !== undefined && emgAdcValue !== undefined
+      ? `\n${buildDatasetInsightSection(datasetRecord, emgAdcValue)}\n`
+      : "";
+
   const assistantMsg = `Great workout, ${profile.name}! Here's what your EMG data tells us:
 
 💪 Primary muscles activated: ${primaryStr}
 ⚡ Workout intensity: ${intensity}
 🔥 Calories burned: ~${calories} kcal
-
+${datasetSection}
 📊 Your daily calorie target: ${dailyCals} kcal
 🥩 Protein: ${proteinG}g | 🍚 Carbs: ${carbG}g | 🥑 Fat: ${fatG}g
 
@@ -481,6 +517,9 @@ ${mealLines}
 
 💪 Recovery foods for ${primaryStr}:
 ${recoveryLines}
+
+🏋️ Recommended exercises for ${primaryStr}:
+${exerciseLines}
 
 💡 ${tip}`;
 
@@ -501,12 +540,8 @@ export default function App() {
 
   const [editingProfile, setEditingProfile] = useState(false);
 
-  const [theme, setTheme] = useState<"dark" | "light">(() => {
-    return (localStorage.getItem("emg-theme") as "dark" | "light") || "dark";
-  });
-
-  const [palette, setPalette] = useState<PaletteId>(() => {
-    return (localStorage.getItem("emg-palette") as PaletteId) || "blue";
+  const [selectedTheme, setSelectedTheme] = useState<ThemeId>(() => {
+    return (localStorage.getItem("emg-theme-v2") as ThemeId) || "blue";
   });
 
   const [muscles, setMuscles] = useState<Record<MuscleKey, number>>(
@@ -557,19 +592,18 @@ export default function App() {
   const chatBottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    document.documentElement.classList.toggle("light", theme === "light");
-    localStorage.setItem("emg-theme", theme);
-  }, [theme]);
-
-  useEffect(() => {
     const html = document.documentElement;
-    if (palette === "blue") {
-      html.removeAttribute("data-palette");
-    } else {
-      html.setAttribute("data-palette", palette);
+    html.classList.remove("light");
+    html.removeAttribute("data-palette");
+
+    if (selectedTheme === "light") {
+      html.classList.add("light");
+    } else if (selectedTheme === "green") {
+      html.setAttribute("data-palette", "green");
     }
-    localStorage.setItem("emg-palette", palette);
-  }, [palette]);
+    // "dark" and "blue" = default (no class, no data-palette)
+    localStorage.setItem("emg-theme-v2", selectedTheme);
+  }, [selectedTheme]);
 
   useEffect(() => {
     if (profile) localStorage.setItem("emg-profile", JSON.stringify(profile));
@@ -585,16 +619,43 @@ export default function App() {
     setEditingProfile(false);
   };
 
+  // Compute representative ADC value from muscle percentages
+  const computeEmgAdcValue = (
+    muscleValues: Record<MuscleKey, number>,
+  ): number => {
+    const values = MUSCLE_KEYS.map((k) => muscleValues[k]);
+    const avg = values.reduce((a, b) => a + b, 0) / values.length;
+    return Math.round((avg / 100) * 1023);
+  };
+
   // Core analyze function that accepts values directly (for debounce use)
-  const handleAnalyzeWithValues = (
+  const handleAnalyzeWithValues = async (
     muscleValues: Record<MuscleKey, number>,
     userProfile: UserProfile,
   ) => {
     const dur = Number.parseInt(duration) || 30;
+
+    // Fetch dataset insight from backend (non-blocking — falls back gracefully)
+    const emgAdcValue = computeEmgAdcValue(muscleValues);
+    let datasetRecord: EMGRecord | undefined;
+    try {
+      const backendInstance = await createActorWithConfig();
+      datasetRecord = await backendInstance.getEMGRecommendation(
+        BigInt(emgAdcValue),
+      );
+    } catch (err) {
+      console.warn(
+        "Backend EMG dataset lookup failed, continuing without it:",
+        err,
+      );
+    }
+
     const { assistantMsg, userMsg } = analyzeWorkout(
       muscleValues,
       dur,
       userProfile,
+      datasetRecord,
+      datasetRecord !== undefined ? emgAdcValue : undefined,
     );
 
     const now = Date.now();
@@ -613,9 +674,9 @@ export default function App() {
     setMessages((prev) => [...prev, userMessage, botMessage]);
   };
 
-  const handleAnalyze = () => {
+  const handleAnalyze = async () => {
     if (!profile) return;
-    handleAnalyzeWithValues(muscles, profile);
+    await handleAnalyzeWithValues(muscles, profile);
   };
 
   const clearHistory = () => {
@@ -654,11 +715,11 @@ export default function App() {
       if (autoAnalyzeTimer.current) clearTimeout(autoAnalyzeTimer.current);
       if (statusResetTimer.current) clearTimeout(statusResetTimer.current);
       setSensingStatus("sensing");
-      autoAnalyzeTimer.current = setTimeout(() => {
+      autoAnalyzeTimer.current = setTimeout(async () => {
         const currentMuscles = musclesRef.current;
         const currentProfile = profileRef.current;
         if (currentProfile) {
-          handleAnalyzeWithValues(currentMuscles, currentProfile);
+          await handleAnalyzeWithValues(currentMuscles, currentProfile);
         }
         setSensingStatus("done");
         statusResetTimer.current = setTimeout(() => {
@@ -684,7 +745,6 @@ export default function App() {
     return (
       <ProfileSetup
         onComplete={handleProfileComplete}
-        palette={palette}
         initialData={profile ?? undefined}
       />
     );
@@ -718,51 +778,11 @@ export default function App() {
               </p>
             </div>
 
-            {/* Palette picker */}
-            <PalettePicker palette={palette} onChange={setPalette} />
-
-            {/* Divider */}
-            <div className="w-px h-5 bg-border" />
-
-            {/* Theme toggle */}
-            <Button
-              data-ocid="header.theme.toggle"
-              variant="outline"
-              size="sm"
-              className="border-border text-muted-foreground hover:text-foreground w-9 px-0"
-              onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
-              aria-label={
-                theme === "dark"
-                  ? "Switch to light mode"
-                  : "Switch to dark mode"
-              }
-            >
-              <AnimatePresence mode="wait" initial={false}>
-                {theme === "dark" ? (
-                  <motion.span
-                    key="sun"
-                    initial={{ rotate: -90, opacity: 0 }}
-                    animate={{ rotate: 0, opacity: 1 }}
-                    exit={{ rotate: 90, opacity: 0 }}
-                    transition={{ duration: 0.2 }}
-                    className="flex items-center justify-center"
-                  >
-                    <Sun className="h-4 w-4" />
-                  </motion.span>
-                ) : (
-                  <motion.span
-                    key="moon"
-                    initial={{ rotate: 90, opacity: 0 }}
-                    animate={{ rotate: 0, opacity: 1 }}
-                    exit={{ rotate: -90, opacity: 0 }}
-                    transition={{ duration: 0.2 }}
-                    className="flex items-center justify-center"
-                  >
-                    <Moon className="h-4 w-4" />
-                  </motion.span>
-                )}
-              </AnimatePresence>
-            </Button>
+            {/* Theme selector */}
+            <ThemeSelector
+              selectedTheme={selectedTheme}
+              onChange={setSelectedTheme}
+            />
             <Button
               data-ocid="header.edit_profile.button"
               variant="outline"
@@ -895,7 +915,13 @@ export default function App() {
                   </>
                 )}
 
-                <EMGWaveSVG palette={palette} />
+                <EMGWaveSVG
+                  strokeColor={
+                    selectedTheme === "green"
+                      ? "oklch(0.72 0.22 145)"
+                      : "oklch(0.72 0.22 220)"
+                  }
+                />
               </CardHeader>
               <CardContent className="space-y-4">
                 {MUSCLE_KEYS.map((muscle) => {

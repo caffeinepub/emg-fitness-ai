@@ -53,6 +53,14 @@
     --sidebar-ring: 0.72 0.22 220;
   }
 
+  html {
+    transition: background-color 0.3s ease, color 0.3s ease;
+  }
+  * {
+    transition: background-color 0.3s ease, border-color 0.3s ease, color 0.15s
+      ease;
+  }
+
   html.light {
     --background: 0.97 0.005 250;
     --foreground: 0.15 0.02 260;
@@ -88,70 +96,29 @@
     --sidebar-ring: 0.45 0.22 220;
   }
 
-  /* ── Neon Purple palette ───────────────────────────── */
-  html[data-palette="purple"] {
-    --primary: 0.72 0.25 290;
-    --ring: 0.72 0.25 290;
-    --accent: 0.78 0.22 340;
-    --chart-1: 0.72 0.25 290;
-    --chart-2: 0.78 0.22 340;
-    --sidebar-primary: 0.72 0.25 290;
-    --sidebar-accent: 0.78 0.22 340;
-    --sidebar-ring: 0.72 0.25 290;
-  }
-  html[data-palette="purple"].light {
-    --primary: 0.48 0.25 290;
-    --ring: 0.48 0.25 290;
-    --accent: 0.48 0.22 340;
-    --chart-1: 0.48 0.25 290;
-    --chart-2: 0.48 0.22 340;
-    --sidebar-primary: 0.48 0.25 290;
-    --sidebar-accent: 0.48 0.22 340;
-    --sidebar-ring: 0.48 0.25 290;
-  }
-
   /* ── Solar Orange palette ──────────────────────────── */
-  html[data-palette="orange"] {
-    --primary: 0.78 0.2 50;
-    --ring: 0.78 0.2 50;
-    --accent: 0.76 0.18 180;
-    --chart-1: 0.78 0.2 50;
-    --chart-2: 0.76 0.18 180;
-    --sidebar-primary: 0.78 0.2 50;
-    --sidebar-accent: 0.76 0.18 180;
-    --sidebar-ring: 0.78 0.2 50;
-  }
-  html[data-palette="orange"].light {
-    --primary: 0.55 0.2 50;
-    --ring: 0.55 0.2 50;
-    --accent: 0.45 0.18 180;
-    --chart-1: 0.55 0.2 50;
-    --chart-2: 0.45 0.18 180;
-    --sidebar-primary: 0.55 0.2 50;
-    --sidebar-accent: 0.45 0.18 180;
-    --sidebar-ring: 0.55 0.2 50;
-  }
-
   /* ── Crimson palette ───────────────────────────────── */
-  html[data-palette="crimson"] {
-    --primary: 0.68 0.24 15;
-    --ring: 0.68 0.24 15;
-    --accent: 0.72 0.22 260;
-    --chart-1: 0.68 0.24 15;
-    --chart-2: 0.72 0.22 260;
-    --sidebar-primary: 0.68 0.24 15;
-    --sidebar-accent: 0.72 0.22 260;
-    --sidebar-ring: 0.68 0.24 15;
+
+  /* ── Forest Green palette ──────────────────────────── */
+  html[data-palette="green"] {
+    --primary: 0.72 0.22 145;
+    --ring: 0.72 0.22 145;
+    --accent: 0.72 0.22 220;
+    --chart-1: 0.72 0.22 145;
+    --chart-2: 0.72 0.22 220;
+    --sidebar-primary: 0.72 0.22 145;
+    --sidebar-accent: 0.72 0.22 220;
+    --sidebar-ring: 0.72 0.22 145;
   }
-  html[data-palette="crimson"].light {
-    --primary: 0.48 0.24 15;
-    --ring: 0.48 0.24 15;
-    --accent: 0.48 0.22 260;
-    --chart-1: 0.48 0.24 15;
-    --chart-2: 0.48 0.22 260;
-    --sidebar-primary: 0.48 0.24 15;
-    --sidebar-accent: 0.48 0.22 260;
-    --sidebar-ring: 0.48 0.24 15;
+  html[data-palette="green"].light {
+    --primary: 0.48 0.22 145;
+    --ring: 0.48 0.22 145;
+    --accent: 0.45 0.22 220;
+    --chart-1: 0.48 0.22 145;
+    --chart-2: 0.45 0.22 220;
+    --sidebar-primary: 0.48 0.22 145;
+    --sidebar-accent: 0.45 0.22 220;
+    --sidebar-ring: 0.48 0.22 145;
   }
 }
 
@@ -186,80 +153,28 @@
       );
   }
 
-  /* Purple palette backgrounds */
-  html[data-palette="purple"] body {
+  /* Green palette backgrounds */
+  html[data-palette="green"] body {
     background-image: radial-gradient(
         ellipse at 20% 50%,
-        oklch(0.14 0.05 290 / 0.4) 0%,
+        oklch(0.14 0.05 145 / 0.4) 0%,
         transparent 50%
       ),
       radial-gradient(
         ellipse at 80% 20%,
-        oklch(0.14 0.04 340 / 0.3) 0%,
+        oklch(0.14 0.04 220 / 0.3) 0%,
         transparent 40%
       );
   }
-  html[data-palette="purple"].light body {
+  html[data-palette="green"].light body {
     background-image: radial-gradient(
         ellipse at 20% 50%,
-        oklch(0.88 0.06 290 / 0.35) 0%,
+        oklch(0.88 0.06 145 / 0.35) 0%,
         transparent 50%
       ),
       radial-gradient(
         ellipse at 80% 20%,
-        oklch(0.88 0.06 340 / 0.25) 0%,
-        transparent 40%
-      );
-  }
-
-  /* Orange palette backgrounds */
-  html[data-palette="orange"] body {
-    background-image: radial-gradient(
-        ellipse at 20% 50%,
-        oklch(0.14 0.04 50 / 0.4) 0%,
-        transparent 50%
-      ),
-      radial-gradient(
-        ellipse at 80% 20%,
-        oklch(0.14 0.04 180 / 0.3) 0%,
-        transparent 40%
-      );
-  }
-  html[data-palette="orange"].light body {
-    background-image: radial-gradient(
-        ellipse at 20% 50%,
-        oklch(0.88 0.06 50 / 0.35) 0%,
-        transparent 50%
-      ),
-      radial-gradient(
-        ellipse at 80% 20%,
-        oklch(0.88 0.06 180 / 0.25) 0%,
-        transparent 40%
-      );
-  }
-
-  /* Crimson palette backgrounds */
-  html[data-palette="crimson"] body {
-    background-image: radial-gradient(
-        ellipse at 20% 50%,
-        oklch(0.14 0.05 15 / 0.4) 0%,
-        transparent 50%
-      ),
-      radial-gradient(
-        ellipse at 80% 20%,
-        oklch(0.14 0.04 260 / 0.3) 0%,
-        transparent 40%
-      );
-  }
-  html[data-palette="crimson"].light body {
-    background-image: radial-gradient(
-        ellipse at 20% 50%,
-        oklch(0.88 0.06 15 / 0.35) 0%,
-        transparent 50%
-      ),
-      radial-gradient(
-        ellipse at 80% 20%,
-        oklch(0.88 0.06 260 / 0.25) 0%,
+        oklch(0.88 0.06 220 / 0.25) 0%,
         transparent 40%
       );
   }

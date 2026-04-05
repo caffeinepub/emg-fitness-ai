@@ -89,10 +89,32 @@ export class ExternalBlob {
         return this;
     }
 }
-export interface backendInterface {
+
+export interface EMGRecord {
+  emg: bigint;
+  activity: string;
+  calories: bigint;
+  protein: bigint;
+  carbs: bigint;
+  water: number;
+  recommendation: string;
 }
+
+export interface backendInterface {
+  getEMGRecommendation(emgValue: bigint): Promise<EMGRecord>;
+  getEMGDataset(): Promise<EMGRecord[]>;
+}
+
 export class Backend implements backendInterface {
     constructor(private actor: ActorSubclass<_SERVICE>, private _uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, private _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, private processError?: (error: unknown) => never){}
+
+    async getEMGRecommendation(emgValue: bigint): Promise<EMGRecord> {
+        return this.actor.getEMGRecommendation([emgValue]) as Promise<EMGRecord>;
+    }
+
+    async getEMGDataset(): Promise<EMGRecord[]> {
+        return this.actor.getEMGDataset() as Promise<EMGRecord[]>;
+    }
 }
 export interface CreateActorOptions {
     agent?: Agent;
